@@ -87,5 +87,7 @@ npm install && npm start
 
 - Node >= 20.6 (native fetch + `--env-file` for `.env` loading), ES modules only (`"type": "module"`).
 - No frontend build tooling — keep it dependency-free vanilla JS.
-- Only runtime dependency is `express`. Do not add more without need.
+- Runtime dependencies: `express` and `heic-convert` (server-side HEIC→JPEG
+  conversion; the vision endpoint can't decode HEIC and uploads are ~always
+  iPhone photos). Do not add more without need.
 - Prompts live in `server/prompts.js` only — never inline them in routes.

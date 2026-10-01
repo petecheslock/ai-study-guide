@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import heicConvert from 'heic-convert';
 import { chatJson, transcribeImage, describeEndpoint, log } from './llm.js';
 import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS, looksLikeStudyMaterial } from './prompts.js';
 import { saveDeck, listDecks, getDeck, deleteDeck } from './store.js';
@@ -76,10 +77,22 @@ app.post('/api/transcribe', async (req, res) => {
       return res.status(400).json({ error: 'Expected { image: "<base64>" }' });
     }
     const match = image.match(/^data:(image\/[a-zA-Z+]+);base64,/);
-    const mime = match ? match[1] : 'image/jpeg';
-    const b64 = match ? image.slice(match[0].length) : image;
+    let mime = match ? match[1] : 'image/jpeg';
+    let b64 = match ? image.slice(match[0].length) : image;
     log(`api transcribe: received image (${mime}, ~${Math.round(b64.length / 1024)} KB base64)`);
     const t0 = Date.now();
+    if (mime === 'image/heic' || mime === 'image/heif') {
+      // iPhone photos arrive as HEIC, which the vision endpoint cannot decode.
+      const tConv = Date.now();
+      const jpeg = await heicConvert({
+        buffer: Buffer.from(b64, 'base64'),
+        format: 'JPEG',
+        quality: 0.9
+      });
+      b64 = Buffer.from(jpeg).toString('base64');
+      mime = 'image/jpeg';
+      log(`api transcribe: converted HEIC to JPEG in ${Date.now() - tConv}ms (~${Math.round(b64.length / 1024)} KB base64)`);
+    }
     const text = await transcribeImage(b64, mime);
     log(`api transcribe: got ${text.trim().length} chars in ${Date.now() - t0}ms`);
     res.json({ text: text.trim() });

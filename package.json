@@ -12,6 +12,7 @@
     "node": ">=20.6"
   },
   "dependencies": {
-    "express": "^4.19.2"
+    "express": "^4.19.2",
+    "heic-convert": "^2.1.0"
   }
 }
