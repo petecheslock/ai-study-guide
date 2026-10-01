@@ -2,6 +2,17 @@ export const CARD_COUNT = parseInt(process.env.CARD_COUNT || '15', 10);
 export const MIN_CARDS = 5;
 export const MAX_CARDS = 50;
 
+// Minimum input that counts as real study material (kept in sync with web/app.js).
+export const MIN_GUIDE_CHARS = parseInt(process.env.MIN_GUIDE_CHARS || '80', 10);
+export const MIN_GUIDE_WORDS = parseInt(process.env.MIN_GUIDE_WORDS || '12', 10);
+
+export function looksLikeStudyMaterial(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length < MIN_GUIDE_CHARS) return false;
+  const words = t.split(' ').filter((w) => /[\p{L}\p{N}]/u.test(w));
+  return words.length >= MIN_GUIDE_WORDS;
+}
+
 export function generateSystem(count) {
   return `You are an expert study-aid tutor for a student. You will receive the text of a study guide.
 

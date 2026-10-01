@@ -32,6 +32,17 @@ function showError(sel, msg) {
   el.classList.remove('hidden');
 }
 
+// Quick client-side gate so we can bail before the loading screen / LLM call.
+// Keep thresholds in sync with server/prompts.js.
+const MIN_GUIDE_CHARS = 80;
+const MIN_GUIDE_WORDS = 12;
+function looksLikeStudyMaterial(text) {
+  const t = String(text || '').replace(/\s+/g, ' ').trim();
+  if (t.length < MIN_GUIDE_CHARS) return false;
+  const words = t.split(' ').filter((w) => /[\p{L}\p{N}]/u.test(w));
+  return words.length >= MIN_GUIDE_WORDS;
+}
+
 let elapsedTimer = null;
 function startElapsed() {
   stopElapsed();
@@ -156,7 +167,11 @@ $('#btn-start').addEventListener('click', async () => {
   $('#upload-error').classList.add('hidden');
   const text = $('#guide-text').value.trim();
   if (!text && !imageBase64) {
-    showError('#upload-error', 'Paste some text or add a photo of the study guide first.');
+    showError('#upload-error', "We can't see any study material — paste the study guide text or drop a photo of it.");
+    return;
+  }
+  if (text && !looksLikeStudyMaterial(text)) {
+    showError('#upload-error', "We can't see any real study material there — that looks too short. Paste the full study guide (a sentence or two isn't enough).");
     return;
   }
 
@@ -172,7 +187,9 @@ $('#btn-start').addEventListener('click', async () => {
       setLoadingSub('Transcribing your photo with the vision model — this can take a while…');
       const t = await api('/api/transcribe', { image: imageBase64 });
       guide = t.text;
-      if (!guide || guide.length < 20) throw new Error('Could not read any text from that photo — try a clearer picture.');
+      if (!guide || !looksLikeStudyMaterial(guide)) {
+        throw new Error("We couldn't see any study material in that photo — try a clearer, well-lit picture of the full page.");
+      }
       setLoadingSub(`Read ${guide.length} characters from your photo.`);
     } else {
       setLoadingSub(`Read ${guide.length} characters of guide text.`);

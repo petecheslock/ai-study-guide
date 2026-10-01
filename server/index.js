@@ -2,7 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chatJson, transcribeImage, describeEndpoint, log } from './llm.js';
-import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS } from './prompts.js';
+import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS, looksLikeStudyMaterial } from './prompts.js';
 import { saveDeck, listDecks, getDeck, deleteDeck } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -93,8 +93,8 @@ app.post('/api/transcribe', async (req, res) => {
 app.post('/api/generate', async (req, res) => {
   try {
     const { text, count } = req.body || {};
-    if (!text || typeof text !== 'string' || text.trim().length < 20) {
-      return res.status(400).json({ error: 'Study guide text is too short to work with.' });
+    if (!text || typeof text !== 'string' || !looksLikeStudyMaterial(text)) {
+      return res.status(400).json({ error: "We can't see any study material there — paste the full study guide text." });
     }
     const cardCount = parseCardCount(count);
     if (cardCount === null) {
@@ -113,8 +113,8 @@ app.post('/api/generate', async (req, res) => {
 // Same as /api/generate but streams live card-count progress via SSE.
 app.post('/api/generate/stream', async (req, res) => {
   const { text, count } = req.body || {};
-  if (!text || typeof text !== 'string' || text.trim().length < 20) {
-    return res.status(400).json({ error: 'Study guide text is too short to work with.' });
+  if (!text || typeof text !== 'string' || !looksLikeStudyMaterial(text)) {
+    return res.status(400).json({ error: "We can't see any study material there — paste the full study guide text." });
   }
   const cardCount = parseCardCount(count);
   if (cardCount === null) {
