@@ -311,10 +311,10 @@ kbd {
 .saved-decks-list {
   list-style: none;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
 }
-@media (max-width: 560px) { .saved-decks-list { grid-template-columns: 1fr; } }
+@media (max-width: 560px) { .saved-decks-list { grid-template-columns: minmax(0, 1fr); } }
 .saved-deck-btn {
   display: flex;
   flex-direction: column;
