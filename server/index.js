@@ -2,6 +2,7 @@ import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import heicConvert from 'heic-convert';
+import sharp from 'sharp';
 import { chatJson, transcribeImage, describeEndpoint, log } from './llm.js';
 import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS, looksLikeStudyMaterial } from './prompts.js';
 import { saveDeck, listDecks, getDeck, deleteDeck } from './store.js';
@@ -10,6 +11,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const MAX_UPLOAD = process.env.MAX_UPLOAD || '10mb';
+// The vision endpoint rejects images over 14,745,600 px outright; keep uploads
+// well under that (2048 long side ≈ 4.2 MP, plenty for reading page text).
+const MAX_IMAGE_SIDE = 2048;
 
 app.use(express.json({ limit: MAX_UPLOAD }));
 app.use(express.static(path.join(__dirname, '..', 'web'), {
@@ -81,18 +85,23 @@ app.post('/api/transcribe', async (req, res) => {
     let b64 = match ? image.slice(match[0].length) : image;
     log(`api transcribe: received image (${mime}, ~${Math.round(b64.length / 1024)} KB base64)`);
     const t0 = Date.now();
+    // Normalize every upload: HEIC→JPEG (the vision endpoint can't decode HEIC),
+    // EXIF-orientation fix, and downscale to the endpoint's pixel budget.
+    let buf = Buffer.from(b64, 'base64');
     if (mime === 'image/heic' || mime === 'image/heif') {
-      // iPhone photos arrive as HEIC, which the vision endpoint cannot decode.
       const tConv = Date.now();
-      const jpeg = await heicConvert({
-        buffer: Buffer.from(b64, 'base64'),
-        format: 'JPEG',
-        quality: 0.9
-      });
-      b64 = Buffer.from(jpeg).toString('base64');
-      mime = 'image/jpeg';
-      log(`api transcribe: converted HEIC to JPEG in ${Date.now() - tConv}ms (~${Math.round(b64.length / 1024)} KB base64)`);
+      buf = Buffer.from(await heicConvert({ buffer: buf, format: 'JPEG', quality: 92 }));
+      log(`api transcribe: converted HEIC to JPEG in ${Date.now() - tConv}ms`);
     }
+    const tResize = Date.now();
+    buf = await sharp(buf, { failOn: 'none' })
+      .rotate()
+      .resize(MAX_IMAGE_SIDE, MAX_IMAGE_SIDE, { fit: 'inside', withoutEnlargement: true })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    mime = 'image/jpeg';
+    b64 = buf.toString('base64');
+    log(`api transcribe: normalized to JPEG in ${Date.now() - tResize}ms (~${Math.round(b64.length / 1024)} KB base64)`);
     const text = await transcribeImage(b64, mime);
     log(`api transcribe: got ${text.trim().length} chars in ${Date.now() - t0}ms`);
     res.json({ text: text.trim() });
