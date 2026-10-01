@@ -1,8 +1,15 @@
 services:
   flashcards:
     build: .
+    # To run the prebuilt image instead of building locally:
+    # image: ghcr.io/petecheslock/ai-study-guide:latest
     ports:
       - "${PORT:-3000}:3000"
     env_file:
       - .env
+    volumes:
+      - flashcard-data:/app/data
     restart: unless-stopped
+
+volumes:
+  flashcard-data:
