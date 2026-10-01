@@ -285,27 +285,142 @@ kbd {
 }
 
 .saved-decks {
-  max-width: 560px;
-  margin: 30px auto 0;
+  max-width: 680px;
+  margin: 38px auto 0;
   text-align: center;
+  background: rgba(255, 184, 77, 0.05);
+  border: 1px solid rgba(255, 184, 77, 0.22);
+  border-radius: 22px;
+  padding: 24px 22px;
 }
-.saved-decks .pane-title { text-align: center; }
+.saved-decks-head { margin-bottom: 16px; }
+.saved-decks-title {
+  display: block;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.35rem;
+  color: var(--gold);
+}
+.saved-decks-sub {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-weight: 700;
+  font-size: 0.88rem;
+}
 .saved-decks-list {
   list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 560px) { .saved-decks-list { grid-template-columns: 1fr; } }
+.saved-deck-btn {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-}
-.saved-deck-btn {
+  align-items: flex-start;
+  gap: 5px;
   width: 100%;
-  padding: 12px 20px;
-  border-radius: 14px;
-  font-size: 0.95rem;
-  text-align: left;
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: rgba(255, 184, 77, 0.09);
+  border: 2px solid rgba(255, 184, 77, 0.35);
+  color: #efe9d8;
+  transition: transform 0.12s ease, border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+.saved-deck-btn:hover {
+  border-color: var(--gold);
+  background: rgba(255, 184, 77, 0.16);
+  box-shadow: 0 6px 18px rgba(255, 184, 77, 0.15);
+}
+.saved-deck-name {
+  font-weight: 800;
+  font-size: 1.05rem;
+  width: 100%;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.saved-deck-meta {
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+.saved-decks-list li { position: relative; }
+.deck-delete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 34px;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1rem;
+  background: rgba(255, 107, 94, 0.12);
+  border: 1px solid rgba(255, 107, 94, 0.4);
+  border-radius: 10px;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.15s, background 0.15s, transform 0.12s;
+}
+.deck-delete:hover {
+  opacity: 1;
+  background: rgba(255, 107, 94, 0.28);
+  transform: scale(1.08);
+}
+.saved-deck-btn .saved-deck-name { padding-right: 34px; }
+
+/* ---------- modal ---------- */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(10, 9, 20, 0.72);
+  backdrop-filter: blur(3px);
+}
+.modal-card {
+  width: 100%;
+  max-width: 420px;
+  background: linear-gradient(160deg, #2e2b52 0%, #232041 100%);
+  border: 1px solid rgba(255, 184, 77, 0.3);
+  border-radius: 22px;
+  padding: 32px 28px;
+  text-align: center;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
+  animation: rise 0.25s ease both;
+}
+.modal-emoji { font-size: 2.4rem; margin-bottom: 10px; }
+.modal-card h2 {
+  font-family: var(--font-display);
+  font-size: 1.5rem;
+  margin-bottom: 10px;
+}
+.modal-warn {
+  color: #ff9d94;
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-top: 10px;
+}
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 24px;
+}
+.btn-danger {
+  background: linear-gradient(135deg, var(--coral), var(--coral-deep));
+  box-shadow: 0 6px 0 #a93528, 0 12px 26px rgba(255, 107, 94, 0.28);
+  padding: 12px 28px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
+.btn-danger:hover { filter: brightness(1.06); }
+.btn-danger:active { box-shadow: 0 3px 0 #a93528; }
 
 /* ---------- loading ---------- */
 .loader-card {
@@ -505,6 +620,16 @@ kbd {
 }
 .btn-round .arrow { font-size: 1.5rem; line-height: 1; }
 .kbd-hint { text-align: center; margin-top: 16px; font-size: 0.82rem; }
+.end-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+.btn-end {
+  padding: 9px 22px;
+  font-size: 0.85rem;
+  border-radius: 999px;
+}
 @media (max-width: 560px) {
   .btn-round { padding: 16px 22px; }
   .btn-label { display: none; }

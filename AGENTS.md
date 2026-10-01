@@ -41,6 +41,7 @@ data/
 | `/api/decks` | POST | `{ topic, cards, guideText }` | `{ id }` (saves deck to JSON file) |
 | `/api/decks` | GET | – | `{ decks: [{ id, topic, cardCount, createdAt }] }` |
 | `/api/decks/:id` | GET | – | full saved deck `{ id, topic, cards, guideText, createdAt }` |
+| `/api/decks/:id` | DELETE | – | `{ ok: true }` (404 if missing) |
 
 All errors return `{ error: "message" }` with 4xx/5xx status.
 
@@ -57,8 +58,8 @@ All errors return `{ error: "message" }` with 4xx/5xx status.
 4. **Client-side study state.** The browser holds `guideText`, current cards,
    missed list, and round number, and sends them back on `/api/followup`.
    The server only persists finished decks via `store.js` (JSON file).
-5. **Keyboard**: Space/Enter flips, ArrowRight = knew it, ArrowLeft = missed.
-   Touch buttons mirror this. Keep both working.
+5. **Keyboard**: Space/Enter flips, ArrowRight = knew it, ArrowLeft = missed,
+   Esc = end session (with confirm). Touch buttons mirror this. Keep both working.
 
 ## Configuration
 

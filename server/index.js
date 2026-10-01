@@ -3,7 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chatJson, transcribeImage, describeEndpoint, log } from './llm.js';
 import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS } from './prompts.js';
-import { saveDeck, listDecks, getDeck } from './store.js';
+import { saveDeck, listDecks, getDeck, deleteDeck } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -135,6 +135,15 @@ app.get('/api/decks/:id', (req, res) => {
   const deck = getDeck(req.params.id);
   if (!deck) return res.status(404).json({ error: 'Deck not found.' });
   res.json(deck);
+});
+
+app.delete('/api/decks/:id', (req, res) => {
+  if (deleteDeck(req.params.id)) {
+    log(`api decks: deleted ${req.params.id}`);
+    res.json({ ok: true });
+  } else {
+    res.status(404).json({ error: 'Deck not found.' });
+  }
 });
 
 app.listen(PORT, '0.0.0.0', () => {

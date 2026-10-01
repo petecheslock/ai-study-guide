@@ -53,7 +53,10 @@
     <p id="upload-error" class="error hidden"></p>
 
     <div id="saved-decks" class="saved-decks hidden">
-      <span class="pane-title">📚 Or review a saved deck</span>
+      <div class="saved-decks-head">
+        <span class="saved-decks-title">📚 Saved decks</span>
+        <span class="saved-decks-sub">Jump back into a deck you already made — no LLM needed</span>
+      </div>
       <ul id="saved-decks-list" class="saved-decks-list"></ul>
     </div>
   </section>
@@ -108,7 +111,10 @@
         <span class="arrow">→</span>
       </button>
     </div>
-    <p class="kbd-hint muted"><kbd>←</kbd> didn't know &nbsp; <kbd>→</kbd> got it &nbsp; <kbd>space</kbd> flip</p>
+    <p class="kbd-hint muted"><kbd>←</kbd> didn't know &nbsp; <kbd>→</kbd> got it &nbsp; <kbd>space</kbd> flip &nbsp; <kbd>esc</kbd> end session</p>
+    <div class="end-row">
+      <button id="btn-end" class="btn btn-ghost btn-end" title="Back to the main screen (Esc)">✕ End session</button>
+    </div>
   </section>
 
   <!-- ============ ROUND COMPLETE SCREEN ============ -->
@@ -132,6 +138,20 @@
 </main>
 
 <footer class="footer muted">runs entirely on your home network · <span id="endpoint-label"></span></footer>
+
+<!-- ============ DELETE DECK MODAL ============ -->
+<div id="delete-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+  <div class="modal-card">
+    <div class="modal-emoji">🗑️</div>
+    <h2 id="delete-modal-title">Delete these flashcards?</h2>
+    <p id="delete-modal-text" class="muted"></p>
+    <p class="modal-warn">This can't be undone — you'd have to regenerate the deck with the LLM.</p>
+    <div class="modal-actions">
+      <button id="btn-delete-cancel" class="btn btn-ghost">Keep them</button>
+      <button id="btn-delete-confirm" class="btn btn-danger">Yes, delete</button>
+    </div>
+  </div>
+</div>
 
 <script src="app.js"></script>
 </body>

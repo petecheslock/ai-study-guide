@@ -49,9 +49,10 @@ function setLoadingSub(msg) {
   $('#loading-sub').textContent = msg;
 }
 
-async function api(path, body) {
+async function api(path, body, method) {
+  const m = method || (body === undefined ? 'GET' : 'POST');
   const res = await fetch(path, {
-    method: body === undefined ? 'GET' : 'POST',
+    method: m,
     headers: { 'Content-Type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
@@ -231,6 +232,7 @@ document.addEventListener('keydown', (e) => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); answer(true); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); answer(false); }
+  else if (e.key === 'Escape') { e.preventDefault(); endSession(); }
 });
 
 // ---------- round complete ----------
@@ -293,7 +295,19 @@ $('#btn-followup').addEventListener('click', async () => {
   }
 });
 
-$('#btn-restart').addEventListener('click', () => {
+$('#btn-restart').addEventListener('click', backToUpload);
+$('#btn-end').addEventListener('click', endSession);
+
+function endSession() {
+  if (state.answering) return;
+  const progress = state.index > 0
+    ? `You're on card ${state.index + 1} of ${state.cards.length}.`
+    : '';
+  if (!confirm(`End this session? ${progress} Your saved deck will still be on the main screen.`)) return;
+  backToUpload();
+}
+
+function backToUpload() {
   state.guideText = '';
   state.cards = [];
   state.round = 1;
@@ -302,8 +316,9 @@ $('#btn-restart').addEventListener('click', () => {
   $('#preview').classList.add('hidden');
   $('#drop-prompt').classList.remove('hidden');
   $('#deck-topic').classList.add('hidden');
+  refreshSavedDecks();
   show('#screen-upload');
-});
+}
 
 // ---------- saved decks ----------
 async function saveDeckRemote(deck, guideText) {
@@ -329,11 +344,27 @@ async function refreshSavedDecks() {
     for (const d of decks) {
       const li = document.createElement('li');
       const btn = document.createElement('button');
-      btn.className = 'btn btn-ghost saved-deck-btn';
+      btn.className = 'btn saved-deck-btn';
+      const name = document.createElement('span');
+      name.className = 'saved-deck-name';
+      name.textContent = `📚 ${d.topic}`;
+      const meta = document.createElement('span');
+      meta.className = 'saved-deck-meta';
       const when = new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-      btn.textContent = `${d.topic} · ${d.cardCount} cards · ${when}`;
+      meta.textContent = `${d.cardCount} cards · saved ${when}`;
+      btn.append(name, meta);
       btn.addEventListener('click', () => loadSavedDeck(d.id));
-      li.appendChild(btn);
+      const trash = document.createElement('button');
+      trash.className = 'deck-delete';
+      trash.type = 'button';
+      trash.title = `Delete "${d.topic}"`;
+      trash.setAttribute('aria-label', `Delete ${d.topic}`);
+      trash.textContent = '🗑';
+      trash.addEventListener('click', (e) => {
+        e.stopPropagation();
+        openDeleteModal(d.id, d.topic, d.cardCount);
+      });
+      li.append(btn, trash);
       ul.appendChild(li);
     }
   } catch {
@@ -352,6 +383,48 @@ async function loadSavedDeck(id) {
     showError('#upload-error', err.message);
   }
 }
+
+// ---------- delete-deck modal ----------
+let pendingDeleteId = null;
+
+function openDeleteModal(id, topic, cardCount) {
+  pendingDeleteId = id;
+  $('#delete-modal-text').textContent =
+    `"${topic}" (${cardCount} cards) will be permanently removed from your saved decks.`;
+  $('#delete-modal').classList.remove('hidden');
+  $('#btn-delete-confirm').focus({ preventScroll: true });
+}
+
+function closeDeleteModal() {
+  pendingDeleteId = null;
+  $('#delete-modal').classList.add('hidden');
+}
+
+$('#btn-delete-cancel').addEventListener('click', closeDeleteModal);
+$('#delete-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeDeleteModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('#delete-modal').classList.contains('hidden')) {
+    e.preventDefault();
+    closeDeleteModal();
+  }
+});
+
+$('#btn-delete-confirm').addEventListener('click', async () => {
+  if (!pendingDeleteId) return;
+  const btn = $('#btn-delete-confirm');
+  btn.disabled = true;
+  try {
+    await api(`/api/decks/${pendingDeleteId}`, undefined, 'DELETE');
+    closeDeleteModal();
+    refreshSavedDecks();
+  } catch (err) {
+    $('#delete-modal-text').textContent = `Delete failed: ${err.message}`;
+  } finally {
+    btn.disabled = false;
+  }
+});
 
 // ---------- boot ----------
 refreshSavedDecks();

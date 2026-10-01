@@ -49,3 +49,11 @@ export function listDecks() {
 export function getDeck(id) {
   return loadAll().find((d) => d.id === id) || null;
 }
+
+export function deleteDeck(id) {
+  const decks = loadAll();
+  const next = decks.filter((d) => d.id !== id);
+  if (next.length === decks.length) return false;
+  saveAll(next);
+  return true;
+}
