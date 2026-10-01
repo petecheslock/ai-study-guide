@@ -139,6 +139,7 @@ $('#btn-start').addEventListener('click', async () => {
     setStep('done');
     stopElapsed();
 
+    saveDeckRemote(deck, guide);
     startRound(deck.cards, state.round);
   } catch (err) {
     stopElapsed();
@@ -160,15 +161,32 @@ function startRound(cards, round) {
   renderCard();
 }
 
-function renderCard() {
-  const card = $('#card');
-  card.classList.remove('flipped', 'shake-left', 'pop-right');
-  state.flipped = false;
+const FLIP_MS = 580; // must be >= the .card-inner transition duration in styles.css
+
+function renderCardContent() {
   const c = state.cards[state.index];
   $('#card-question').textContent = c.question;
   $('#card-answer').textContent = c.answer;
   updateProgress();
-  card.focus({ preventScroll: true });
+  $('#card').focus({ preventScroll: true });
+}
+
+function renderCard() {
+  const card = $('#card');
+  if (card.classList.contains('flipped')) {
+    // flip back to the question side first; swap text only after the flip
+    // completes so the next card's answer is never visible mid-flip
+    card.classList.remove('flipped', 'shake-left', 'pop-right');
+    state.flipped = false;
+    state.answering = true;
+    setTimeout(() => {
+      renderCardContent();
+      state.answering = false;
+    }, FLIP_MS);
+  } else {
+    card.classList.remove('shake-left', 'pop-right');
+    renderCardContent();
+  }
 }
 
 function updateProgress() {
@@ -264,6 +282,7 @@ $('#btn-followup').addEventListener('click', async () => {
       missed: state.missed.map(c => ({ question: c.question, answer: c.answer })),
     });
     stopElapsed();
+    saveDeckRemote(deck, state.guideText);
     startRound(deck.cards, state.round + 1);
   } catch (err) {
     stopElapsed();
@@ -286,7 +305,56 @@ $('#btn-restart').addEventListener('click', () => {
   show('#screen-upload');
 });
 
+// ---------- saved decks ----------
+async function saveDeckRemote(deck, guideText) {
+  try {
+    await api('/api/decks', { topic: deck.topic, cards: deck.cards, guideText: guideText || '' });
+    refreshSavedDecks();
+  } catch (err) {
+    console.warn('could not save deck:', err.message);
+  }
+}
+
+async function refreshSavedDecks() {
+  try {
+    const { decks } = await api('/api/decks');
+    const wrap = $('#saved-decks');
+    const ul = $('#saved-decks-list');
+    ul.innerHTML = '';
+    if (!decks.length) {
+      wrap.classList.add('hidden');
+      return;
+    }
+    wrap.classList.remove('hidden');
+    for (const d of decks) {
+      const li = document.createElement('li');
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost saved-deck-btn';
+      const when = new Date(d.createdAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+      btn.textContent = `${d.topic} · ${d.cardCount} cards · ${when}`;
+      btn.addEventListener('click', () => loadSavedDeck(d.id));
+      li.appendChild(btn);
+      ul.appendChild(li);
+    }
+  } catch {
+    /* saved decks are optional; ignore fetch failures */
+  }
+}
+
+async function loadSavedDeck(id) {
+  $('#upload-error').classList.add('hidden');
+  try {
+    const deck = await api(`/api/decks/${id}`);
+    state.guideText = deck.guideText || '';
+    state.round = 1;
+    startRound(deck.cards, 1);
+  } catch (err) {
+    showError('#upload-error', err.message);
+  }
+}
+
 // ---------- boot ----------
+refreshSavedDecks();
 api('/api/health').then(h => {
   $('#endpoint-label').textContent = h.endpoint.baseUrl;
 }).catch(() => {

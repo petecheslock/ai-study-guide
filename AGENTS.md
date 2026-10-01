@@ -10,8 +10,9 @@ A student studies with ← / → arrow keys (don't know / got it); after each ro
 missed concepts are sent back to the LLM to generate a **fresh follow-up deck**
 on just those concepts.
 
-**No persistence.** Decks live in the browser session only. Do not add a
-database unless the owner explicitly asks.
+**Deck persistence (owner-requested).** Generated decks are saved to a plain
+JSON file (`data/decks.json`) so expensive LLM generations can be reviewed
+later. Do not add a database.
 
 ## Architecture
 
@@ -24,6 +25,9 @@ server/
   index.js      Express app: static files + JSON API
   llm.js        OpenAI-compatible chat client (fetch, retries, JSON extraction)
   prompts.js    System prompts: generate, verify, follow-up
+  store.js      Saved-deck storage (JSON file at data/decks.json)
+data/
+  decks.json    Saved decks (gitignored)
 ```
 
 ## API contract
@@ -34,6 +38,9 @@ server/
 | `/api/transcribe` | POST | `{ image: "<base64 or data-URL>" }` | `{ text }` (vision model transcription) |
 | `/api/generate` | POST | `{ text, count? }` (count 5–50, clamped; defaults to `CARD_COUNT`) | `{ topic, cards: [{ id, question, answer }] }` |
 | `/api/followup` | POST | `{ text, missed: [{ question, answer }] }` | `{ topic, cards: [...] }` |
+| `/api/decks` | POST | `{ topic, cards, guideText }` | `{ id }` (saves deck to JSON file) |
+| `/api/decks` | GET | – | `{ decks: [{ id, topic, cardCount, createdAt }] }` |
+| `/api/decks/:id` | GET | – | full saved deck `{ id, topic, cards, guideText, createdAt }` |
 
 All errors return `{ error: "message" }` with 4xx/5xx status.
 
@@ -47,9 +54,9 @@ All errors return `{ error: "message" }` with 4xx/5xx status.
 3. **JSON robustness**: `extractJson()` in `llm.js` tolerates code fences and
    preamble; `chatJson()` retries once with a correction nudge. Keep this —
    local models are sloppy.
-4. **Client-side state only.** The server is stateless; the browser holds
-   `guideText`, current cards, missed list, and round number, and sends them
-   back on `/api/followup`.
+4. **Client-side study state.** The browser holds `guideText`, current cards,
+   missed list, and round number, and sends them back on `/api/followup`.
+   The server only persists finished decks via `store.js` (JSON file).
 5. **Keyboard**: Space/Enter flips, ArrowRight = knew it, ArrowLeft = missed.
    Touch buttons mirror this. Keep both working.
 

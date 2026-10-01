@@ -3,6 +3,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chatJson, transcribeImage, describeEndpoint, log } from './llm.js';
 import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS } from './prompts.js';
+import { saveDeck, listDecks, getDeck } from './store.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -108,6 +109,32 @@ app.post('/api/followup', async (req, res) => {
     console.error('followup error:', err);
     res.status(502).json({ error: `Could not generate follow-up cards: ${err.message}` });
   }
+});
+
+// Saved decks (simple JSON file storage) so expensive generations can be reused.
+app.post('/api/decks', (req, res) => {
+  try {
+    const { topic, cards, guideText } = req.body || {};
+    if (!Array.isArray(cards) || !cards.length) {
+      return res.status(400).json({ error: 'Expected { topic, cards: [{question, answer}], guideText }' });
+    }
+    const deck = saveDeck({ topic, cards, guideText });
+    log(`api decks: saved "${deck.topic}" (${deck.cards.length} cards) as ${deck.id}`);
+    res.json({ id: deck.id });
+  } catch (err) {
+    console.error('deck save error:', err);
+    res.status(500).json({ error: `Could not save deck: ${err.message}` });
+  }
+});
+
+app.get('/api/decks', (req, res) => {
+  res.json({ decks: listDecks() });
+});
+
+app.get('/api/decks/:id', (req, res) => {
+  const deck = getDeck(req.params.id);
+  if (!deck) return res.status(404).json({ error: 'Deck not found.' });
+  res.json(deck);
 });
 
 app.listen(PORT, '0.0.0.0', () => {
