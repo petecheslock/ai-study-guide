@@ -1,6 +1,9 @@
 export const CARD_COUNT = parseInt(process.env.CARD_COUNT || '15', 10);
+export const MIN_CARDS = 5;
+export const MAX_CARDS = 50;
 
-export const GENERATE_SYSTEM = `You are an expert study-aid tutor for a student. You will receive the text of a study guide.
+export function generateSystem(count) {
+  return `You are an expert study-aid tutor for a student. You will receive the text of a study guide.
 
 Create high-quality flashcards that teach the material. Rules:
 - Every answer MUST be directly supported by the study guide text. Do not invent facts.
@@ -16,7 +19,8 @@ Respond with ONLY a JSON object in exactly this shape:
     { "question": "...", "answer": "..." }
   ]
 }
-Generate exactly ${CARD_COUNT} cards (fewer only if the material cannot support more).`;
+Generate exactly ${count} cards (fewer only if the material cannot support more).`;
+}
 
 export const VERIFY_SYSTEM = `You are a careful fact-checker. You will receive the original study guide text and a JSON object of flashcards.
 

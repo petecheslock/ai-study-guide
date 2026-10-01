@@ -1,8 +1,8 @@
 import express from 'express';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chatJson, transcribeImage, describeEndpoint } from './llm.js';
-import { GENERATE_SYSTEM, VERIFY_SYSTEM, FOLLOWUP_SYSTEM } from './prompts.js';
+import { chatJson, transcribeImage, describeEndpoint, log } from './llm.js';
+import { generateSystem, VERIFY_SYSTEM, FOLLOWUP_SYSTEM, CARD_COUNT, MIN_CARDS, MAX_CARDS } from './prompts.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -36,7 +36,10 @@ app.post('/api/transcribe', async (req, res) => {
     const match = image.match(/^data:(image\/[a-zA-Z+]+);base64,/);
     const mime = match ? match[1] : 'image/jpeg';
     const b64 = match ? image.slice(match[0].length) : image;
+    log(`api transcribe: received image (${mime}, ~${Math.round(b64.length / 1024)} KB base64)`);
+    const t0 = Date.now();
     const text = await transcribeImage(b64, mime);
+    log(`api transcribe: got ${text.trim().length} chars in ${Date.now() - t0}ms`);
     res.json({ text: text.trim() });
   } catch (err) {
     console.error('transcribe error:', err);
@@ -47,21 +50,36 @@ app.post('/api/transcribe', async (req, res) => {
 // Generate + verify a flashcard deck from study guide text.
 app.post('/api/generate', async (req, res) => {
   try {
-    const { text } = req.body || {};
+    const { text, count } = req.body || {};
     if (!text || typeof text !== 'string' || text.trim().length < 20) {
       return res.status(400).json({ error: 'Study guide text is too short to work with.' });
     }
+    let cardCount = CARD_COUNT;
+    if (count !== undefined && count !== null && count !== '') {
+      const n = parseInt(count, 10);
+      if (!Number.isFinite(n)) {
+        return res.status(400).json({ error: 'Card count must be a number.' });
+      }
+      cardCount = Math.min(MAX_CARDS, Math.max(MIN_CARDS, n));
+    }
     const guide = text.trim();
-    const draft = cleanCards(await chatJson(GENERATE_SYSTEM, `Study guide text:\n"""\n${guide}\n"""`));
+    const t0 = Date.now();
+    log(`api generate: guide is ${guide.length} chars, requesting ${cardCount} cards`);
+    const draft = cleanCards(await chatJson(generateSystem(cardCount), `Study guide text:\n"""\n${guide}\n"""`, { label: 'generate' }));
+    log(`api generate: draft has ${draft.cards.length} cards ("${draft.topic}") in ${Date.now() - t0}ms`);
     let deck = draft;
+    const tVerify = Date.now();
     try {
       deck = cleanCards(await chatJson(
         VERIFY_SYSTEM,
-        `Original study guide text:\n"""\n${guide}\n"""\n\nFlashcards to verify:\n${JSON.stringify(draft, null, 2)}`
+        `Original study guide text:\n"""\n${guide}\n"""\n\nFlashcards to verify:\n${JSON.stringify(draft, null, 2)}`,
+        { label: 'verify' }
       ));
+      log(`api generate: verified deck has ${deck.cards.length} cards in ${Date.now() - tVerify}ms (${deck.cards.length - draft.cards.length} removed)`);
     } catch (err) {
       console.warn('verification pass failed, using unverified draft:', err.message);
     }
+    log(`api generate: done in ${Date.now() - t0}ms total`);
     res.json(deck);
   } catch (err) {
     console.error('generate error:', err);
@@ -77,10 +95,14 @@ app.post('/api/followup', async (req, res) => {
       return res.status(400).json({ error: 'Expected { text, missed: [{question, answer}] }' });
     }
     const slimMissed = missed.map(c => ({ question: c.question, answer: c.answer }));
+    const t0 = Date.now();
+    log(`api followup: ${slimMissed.length} missed concepts, generating fresh angles`);
     const deck = cleanCards(await chatJson(
       FOLLOWUP_SYSTEM,
-      `Original study guide text:\n"""\n${String(text).trim()}\n"""\n\nCards the student missed:\n${JSON.stringify(slimMissed, null, 2)}`
+      `Original study guide text:\n"""\n${String(text).trim()}\n"""\n\nCards the student missed:\n${JSON.stringify(slimMissed, null, 2)}`,
+      { label: 'followup' }
     ));
+    log(`api followup: generated ${deck.cards.length} cards in ${Date.now() - t0}ms`);
     res.json(deck);
   } catch (err) {
     console.error('followup error:', err);

@@ -32,7 +32,7 @@ server/
 |---|---|---|---|
 | `/api/health` | GET | – | `{ ok, endpoint: { baseUrl, model, visionModel } }` |
 | `/api/transcribe` | POST | `{ image: "<base64 or data-URL>" }` | `{ text }` (vision model transcription) |
-| `/api/generate` | POST | `{ text }` | `{ topic, cards: [{ id, question, answer }] }` |
+| `/api/generate` | POST | `{ text, count? }` (count 5–50, clamped; defaults to `CARD_COUNT`) | `{ topic, cards: [{ id, question, answer }] }` |
 | `/api/followup` | POST | `{ text, missed: [{ question, answer }] }` | `{ topic, cards: [...] }` |
 
 All errors return `{ error: "message" }` with 4xx/5xx status.
@@ -72,7 +72,7 @@ npm install && npm start
 
 ## Conventions
 
-- Node >= 18 (native fetch), ES modules only (`"type": "module"`).
+- Node >= 20.6 (native fetch + `--env-file` for `.env` loading), ES modules only (`"type": "module"`).
 - No frontend build tooling — keep it dependency-free vanilla JS.
 - Only runtime dependency is `express`. Do not add more without need.
 - Prompts live in `server/prompts.js` only — never inline them in routes.

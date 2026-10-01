@@ -43,6 +43,12 @@
       </div>
     </div>
 
+    <div class="card-count-row">
+      <label class="pane-title" for="card-count">🗂️ How many flashcards? <span id="card-count-value" class="card-count-value">15</span></label>
+      <input type="range" id="card-count" min="5" max="50" step="1" value="15" />
+      <div class="card-count-scale muted"><span>5</span><span>50</span></div>
+    </div>
+
     <button id="btn-start" class="btn btn-primary btn-big">Build my flashcards ✦</button>
     <p id="upload-error" class="error hidden"></p>
   </section>
@@ -53,6 +59,7 @@
       <div class="flip-loader"><div></div><div></div></div>
       <h2 id="loading-title">Reading your study guide…</h2>
       <p id="loading-sub" class="muted">This can take a minute with a local model.</p>
+      <p id="loading-elapsed" class="loading-elapsed muted"></p>
       <ul class="steps" id="loading-steps">
         <li data-step="read">Reading the guide</li>
         <li data-step="gen">Writing flashcards</li>

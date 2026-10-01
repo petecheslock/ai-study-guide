@@ -32,6 +32,23 @@ function showError(sel, msg) {
   el.classList.remove('hidden');
 }
 
+let elapsedTimer = null;
+function startElapsed() {
+  stopElapsed();
+  const t0 = Date.now();
+  $('#loading-elapsed').textContent = '0s elapsed';
+  elapsedTimer = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $('#loading-elapsed').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')} elapsed`;
+  }, 1000);
+}
+function stopElapsed() {
+  if (elapsedTimer) { clearInterval(elapsedTimer); elapsedTimer = null; }
+}
+function setLoadingSub(msg) {
+  $('#loading-sub').textContent = msg;
+}
+
 async function api(path, body) {
   const res = await fetch(path, {
     method: body === undefined ? 'GET' : 'POST',
@@ -46,7 +63,12 @@ async function api(path, body) {
 // ---------- upload ----------
 const dropzone = $('#dropzone');
 const fileInput = $('#file-input');
+const cardCountInput = $('#card-count');
 let imageBase64 = null;
+
+cardCountInput.addEventListener('input', () => {
+  $('#card-count-value').textContent = cardCountInput.value;
+});
 
 dropzone.addEventListener('click', () => fileInput.click());
 ['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
@@ -89,27 +111,37 @@ $('#btn-start').addEventListener('click', async () => {
   $('#loading-title').textContent = 'Reading your study guide…';
   $('#loading-steps').classList.remove('hidden');
   setStep('read');
+  startElapsed();
 
   try {
     let guide = text;
     if (!guide && imageBase64) {
+      setLoadingSub('Transcribing your photo with the vision model — this can take a while…');
       const t = await api('/api/transcribe', { image: imageBase64 });
       guide = t.text;
       if (!guide || guide.length < 20) throw new Error('Could not read any text from that photo — try a clearer picture.');
+      setLoadingSub(`Read ${guide.length} characters from your photo.`);
+    } else {
+      setLoadingSub(`Read ${guide.length} characters of guide text.`);
     }
     state.guideText = guide;
 
+    const count = cardCountInput.value;
     $('#loading-title').textContent = 'Writing your flashcards…';
     setStep('gen');
-    const deck = await api('/api/generate', { text: guide });
+    setLoadingSub(`Asking the model for ${count} cards, then double-checking every answer against your guide…`);
+    const deck = await api('/api/generate', { text: guide, count });
 
     $('#loading-title').textContent = 'Double-checking answers…';
     setStep('verify');
+    setLoadingSub(`Verified ${deck.cards.length} answers against your guide.`);
     // verification already happened server-side; mark done while deck settles
     setStep('done');
+    stopElapsed();
 
     startRound(deck.cards, state.round);
   } catch (err) {
+    stopElapsed();
     show('#screen-upload');
     showError('#upload-error', err.message);
   }
@@ -223,14 +255,18 @@ $('#btn-followup').addEventListener('click', async () => {
   show('#screen-loading');
   $('#loading-title').textContent = 'Making a follow-up deck…';
   $('#loading-steps').classList.add('hidden');
+  setLoadingSub(`Writing fresh questions on ${state.missed.length} missed concept${state.missed.length === 1 ? '' : 's'}…`);
+  startElapsed();
 
   try {
     const deck = await api('/api/followup', {
       text: state.guideText,
       missed: state.missed.map(c => ({ question: c.question, answer: c.answer })),
     });
+    stopElapsed();
     startRound(deck.cards, state.round + 1);
   } catch (err) {
+    stopElapsed();
     show('#screen-done');
     showError('#followup-error', err.message);
   } finally {

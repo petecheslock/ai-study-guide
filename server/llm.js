@@ -5,7 +5,11 @@ const MODEL = process.env.LLM_MODEL || 'llama3';
 const VISION_MODEL = process.env.VISION_MODEL || MODEL;
 const API_KEY = process.env.LLM_API_KEY || '';
 
-async function chat(messages, { model, temperature = 0.3, maxRetries = 2 } = {}) {
+export function log(...args) {
+  console.log(`[${new Date().toISOString()}]`, ...args);
+}
+
+async function chat(messages, { model, temperature = 0.3, maxRetries = 2, label = 'chat' } = {}) {
   const body = {
     model: model || MODEL,
     messages,
@@ -15,8 +19,12 @@ async function chat(messages, { model, temperature = 0.3, maxRetries = 2 } = {})
   const headers = { 'Content-Type': 'application/json' };
   if (API_KEY) headers['Authorization'] = `Bearer ${API_KEY}`;
 
+  const approxChars = messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+  log(`llm ${label}: sending request model=${body.model} messages=${messages.length} ~${approxChars} chars`);
+
   let lastErr;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const t0 = Date.now();
     try {
       const res = await fetch(`${BASE_URL}/chat/completions`, {
         method: 'POST',
@@ -30,9 +38,12 @@ async function chat(messages, { model, temperature = 0.3, maxRetries = 2 } = {})
       const data = await res.json();
       const content = data?.choices?.[0]?.message?.content;
       if (!content) throw new Error('LLM response had no content');
+      const u = data.usage || {};
+      log(`llm ${label}: ok in ${Date.now() - t0}ms (attempt ${attempt + 1}) tokens: prompt=${u.prompt_tokens ?? '?'} completion=${u.completion_tokens ?? '?'} total=${u.total_tokens ?? '?'}`);
       return content;
     } catch (err) {
       lastErr = err;
+      log(`llm ${label}: attempt ${attempt + 1}/${maxRetries + 1} failed after ${Date.now() - t0}ms: ${err.message}`);
       if (attempt < maxRetries) await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
     }
   }
@@ -64,6 +75,7 @@ export async function chatJson(systemPrompt, userContent, opts = {}) {
       return extractJson(raw);
     } catch (err) {
       lastErr = err;
+      log(`llm ${opts.label || 'chat'}: unparseable JSON (${err.message}), retrying with correction nudge`);
       messages.push({ role: 'assistant', content: raw });
       messages.push({
         role: 'user',

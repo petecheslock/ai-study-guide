@@ -5,11 +5,11 @@
   "type": "module",
   "main": "server/index.js",
   "scripts": {
-    "start": "node server/index.js",
-    "dev": "node --watch server/index.js"
+    "start": "node --env-file=.env server/index.js",
+    "dev": "node --watch --env-file=.env server/index.js"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20.6"
   },
   "dependencies": {
     "express": "^4.19.2"
