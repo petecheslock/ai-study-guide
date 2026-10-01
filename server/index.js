@@ -11,7 +11,11 @@ const PORT = parseInt(process.env.PORT || '3000', 10);
 const MAX_UPLOAD = process.env.MAX_UPLOAD || '10mb';
 
 app.use(express.json({ limit: MAX_UPLOAD }));
-app.use(express.static(path.join(__dirname, '..', 'web')));
+app.use(express.static(path.join(__dirname, '..', 'web'), {
+  etag: true,
+  lastModified: true,
+  setHeaders: (res) => res.setHeader('Cache-Control', 'no-cache'),
+}));
 
 function cleanCards(obj) {
   if (!obj || !Array.isArray(obj.cards)) throw new Error('LLM returned no cards array');
@@ -21,6 +25,43 @@ function cleanCards(obj) {
     .filter(c => c.question && c.answer);
   if (!cards.length) throw new Error('LLM returned no usable cards');
   return { topic: String(obj.topic || 'Study Deck').trim(), cards };
+}
+
+function sseInit(res) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders();
+}
+
+function sseSend(res, event, data) {
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+function parseCardCount(count) {
+  if (count === undefined || count === null || count === '') return CARD_COUNT;
+  const n = parseInt(count, 10);
+  if (!Number.isFinite(n)) return null;
+  return Math.min(MAX_CARDS, Math.max(MIN_CARDS, n));
+}
+
+async function generateDeckCore(guide, cardCount, onCards) {
+  const t0 = Date.now();
+  const draft = cleanCards(await chatJson(generateSystem(cardCount), `Study guide text:\n"""\n${guide}\n"""`, { label: 'generate', onCards }));
+  log(`api generate: draft has ${draft.cards.length} cards ("${draft.topic}") in ${Date.now() - t0}ms`);
+  return draft;
+}
+
+async function verifyDeckCore(guide, deck, onChecked) {
+  const t0 = Date.now();
+  const verified = cleanCards(await chatJson(
+    VERIFY_SYSTEM,
+    `Original study guide text:\n"""\n${guide}\n"""\n\nFlashcards to verify:\n${JSON.stringify(deck, null, 2)}`,
+    { label: 'verify', onCards: onChecked }
+  ));
+  log(`api verify: verified deck has ${verified.cards.length} cards in ${Date.now() - t0}ms (${verified.cards.length - deck.cards.length} removed)`);
+  return verified;
 }
 
 app.get('/api/health', (req, res) => {
@@ -48,44 +89,89 @@ app.post('/api/transcribe', async (req, res) => {
   }
 });
 
-// Generate + verify a flashcard deck from study guide text.
+// Generate a draft flashcard deck from study guide text (verify is a separate call).
 app.post('/api/generate', async (req, res) => {
   try {
     const { text, count } = req.body || {};
     if (!text || typeof text !== 'string' || text.trim().length < 20) {
       return res.status(400).json({ error: 'Study guide text is too short to work with.' });
     }
-    let cardCount = CARD_COUNT;
-    if (count !== undefined && count !== null && count !== '') {
-      const n = parseInt(count, 10);
-      if (!Number.isFinite(n)) {
-        return res.status(400).json({ error: 'Card count must be a number.' });
-      }
-      cardCount = Math.min(MAX_CARDS, Math.max(MIN_CARDS, n));
+    const cardCount = parseCardCount(count);
+    if (cardCount === null) {
+      return res.status(400).json({ error: 'Card count must be a number.' });
     }
     const guide = text.trim();
-    const t0 = Date.now();
     log(`api generate: guide is ${guide.length} chars, requesting ${cardCount} cards`);
-    const draft = cleanCards(await chatJson(generateSystem(cardCount), `Study guide text:\n"""\n${guide}\n"""`, { label: 'generate' }));
-    log(`api generate: draft has ${draft.cards.length} cards ("${draft.topic}") in ${Date.now() - t0}ms`);
-    let deck = draft;
-    const tVerify = Date.now();
-    try {
-      deck = cleanCards(await chatJson(
-        VERIFY_SYSTEM,
-        `Original study guide text:\n"""\n${guide}\n"""\n\nFlashcards to verify:\n${JSON.stringify(draft, null, 2)}`,
-        { label: 'verify' }
-      ));
-      log(`api generate: verified deck has ${deck.cards.length} cards in ${Date.now() - tVerify}ms (${deck.cards.length - draft.cards.length} removed)`);
-    } catch (err) {
-      console.warn('verification pass failed, using unverified draft:', err.message);
-    }
-    log(`api generate: done in ${Date.now() - t0}ms total`);
-    res.json(deck);
+    const draft = await generateDeckCore(guide, cardCount);
+    res.json(draft);
   } catch (err) {
     console.error('generate error:', err);
     res.status(502).json({ error: `Could not generate flashcards: ${err.message}` });
   }
+});
+
+// Same as /api/generate but streams live card-count progress via SSE.
+app.post('/api/generate/stream', async (req, res) => {
+  const { text, count } = req.body || {};
+  if (!text || typeof text !== 'string' || text.trim().length < 20) {
+    return res.status(400).json({ error: 'Study guide text is too short to work with.' });
+  }
+  const cardCount = parseCardCount(count);
+  if (cardCount === null) {
+    return res.status(400).json({ error: 'Card count must be a number.' });
+  }
+  const guide = text.trim();
+  sseInit(res);
+  log(`api generate/stream: guide is ${guide.length} chars, requesting ${cardCount} cards`);
+  try {
+    const draft = await generateDeckCore(guide, cardCount, (n) => {
+      log(`api generate/stream: wrote ${n}/${cardCount} cards`);
+      sseSend(res, 'progress', { created: n, total: cardCount });
+    });
+    sseSend(res, 'done', draft);
+  } catch (err) {
+    console.error('generate/stream error:', err);
+    sseSend(res, 'error', { error: `Could not generate flashcards: ${err.message}` });
+  }
+  res.end();
+});
+
+// Verify a draft deck against the original study guide.
+app.post('/api/verify', async (req, res) => {
+  try {
+    const { text, deck } = req.body || {};
+    if (!text || !deck || !Array.isArray(deck.cards) || !deck.cards.length) {
+      return res.status(400).json({ error: 'Expected { text, deck: { topic, cards } }' });
+    }
+    log(`api verify: verifying ${deck.cards.length} cards against ${String(text).trim().length} chars of guide`);
+    const verified = await verifyDeckCore(String(text).trim(), deck);
+    res.json(verified);
+  } catch (err) {
+    console.error('verify error:', err);
+    res.status(502).json({ error: `Could not verify flashcards: ${err.message}` });
+  }
+});
+
+// Same as /api/verify but streams live checked-count progress via SSE.
+app.post('/api/verify/stream', async (req, res) => {
+  const { text, deck } = req.body || {};
+  if (!text || !deck || !Array.isArray(deck.cards) || !deck.cards.length) {
+    return res.status(400).json({ error: 'Expected { text, deck: { topic, cards } }' });
+  }
+  const total = deck.cards.length;
+  sseInit(res);
+  log(`api verify/stream: verifying ${total} cards against ${String(text).trim().length} chars of guide`);
+  try {
+    const verified = await verifyDeckCore(String(text).trim(), deck, (n) => {
+      log(`api verify/stream: checked ${Math.min(n, total)}/${total} cards`);
+      sseSend(res, 'progress', { checked: Math.min(n, total), total });
+    });
+    sseSend(res, 'done', verified);
+  } catch (err) {
+    console.error('verify/stream error:', err);
+    sseSend(res, 'error', { error: `Could not verify flashcards: ${err.message}` });
+  }
+  res.end();
 });
 
 // Fresh follow-up questions on missed concepts.

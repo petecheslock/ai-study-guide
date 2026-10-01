@@ -371,6 +371,30 @@ kbd {
 }
 .saved-deck-btn .saved-deck-name { padding-right: 34px; }
 
+/* ---------- toast ---------- */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 56px;
+  transform: translate(-50%, 16px);
+  background: rgba(35, 32, 65, 0.95);
+  border: 1px solid rgba(62, 201, 143, 0.45);
+  color: #d8f5e8;
+  font-weight: 800;
+  font-size: 0.9rem;
+  padding: 10px 22px;
+  border-radius: 999px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s ease, transform 0.25s ease;
+  z-index: 60;
+}
+.toast.show {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 /* ---------- modal ---------- */
 .modal-overlay {
   position: fixed;

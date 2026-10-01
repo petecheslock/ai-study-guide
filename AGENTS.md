@@ -36,7 +36,10 @@ data/
 |---|---|---|---|
 | `/api/health` | GET | – | `{ ok, endpoint: { baseUrl, model, visionModel } }` |
 | `/api/transcribe` | POST | `{ image: "<base64 or data-URL>" }` | `{ text }` (vision model transcription) |
-| `/api/generate` | POST | `{ text, count? }` (count 5–50, clamped; defaults to `CARD_COUNT`) | `{ topic, cards: [{ id, question, answer }] }` |
+| `/api/generate` | POST | `{ text, count? }` (count 5–50, clamped; defaults to `CARD_COUNT`) | draft `{ topic, cards: [{ id, question, answer }] }` (NOT yet verified) |
+| `/api/verify` | POST | `{ text, deck: { topic, cards } }` | verified `{ topic, cards }` (client falls back to draft on failure) |
+| `/api/generate/stream` | POST | same as `/api/generate` | SSE: `progress {created,total}`, `done {topic,cards}`, `error {error}` |
+| `/api/verify/stream` | POST | same as `/api/verify` | SSE: `progress {checked,total}`, `done {topic,cards}`, `error {error}` |
 | `/api/followup` | POST | `{ text, missed: [{ question, answer }] }` | `{ topic, cards: [...] }` |
 | `/api/decks` | POST | `{ topic, cards, guideText }` | `{ id }` (saves deck to JSON file) |
 | `/api/decks` | GET | – | `{ decks: [{ id, topic, cardCount, createdAt }] }` |
@@ -54,7 +57,9 @@ All errors return `{ error: "message" }` with 4xx/5xx status.
    the card itself).
 3. **JSON robustness**: `extractJson()` in `llm.js` tolerates code fences and
    preamble; `chatJson()` retries once with a correction nudge. Keep this —
-   local models are sloppy.
+   local models are sloppy. Live card-count progress uses `createCardCounter()`,
+   a slice-safe incremental parser over the streamed JSON; the final parse is
+   always authoritative, the counter is display-only.
 4. **Client-side study state.** The browser holds `guideText`, current cards,
    missed list, and round number, and sends them back on `/api/followup`.
    The server only persists finished decks via `store.js` (JSON file).

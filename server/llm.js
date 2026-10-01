@@ -9,18 +9,19 @@ export function log(...args) {
   console.log(`[${new Date().toISOString()}]`, ...args);
 }
 
-async function chat(messages, { model, temperature = 0.3, maxRetries = 2, label = 'chat' } = {}) {
+async function chat(messages, { model, temperature = 0.3, maxRetries = 2, label = 'chat', onDelta } = {}) {
   const body = {
     model: model || MODEL,
     messages,
     temperature,
-    stream: false
+    stream: !!onDelta
   };
+  if (onDelta) body.stream_options = { include_usage: true };
   const headers = { 'Content-Type': 'application/json' };
   if (API_KEY) headers['Authorization'] = `Bearer ${API_KEY}`;
 
   const approxChars = messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
-  log(`llm ${label}: sending request model=${body.model} messages=${messages.length} ~${approxChars} chars`);
+  log(`llm ${label}: sending request model=${body.model} messages=${messages.length} ~${approxChars} chars${onDelta ? ' (streaming)' : ''}`);
 
   let lastErr;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -35,11 +36,42 @@ async function chat(messages, { model, temperature = 0.3, maxRetries = 2, label 
         const text = await res.text().catch(() => '');
         throw new Error(`LLM endpoint returned ${res.status}: ${text.slice(0, 500)}`);
       }
-      const data = await res.json();
-      const content = data?.choices?.[0]?.message?.content;
+      let content;
+      let usage = {};
+      if (onDelta) {
+        content = '';
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buf += decoder.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, nl).trim();
+            buf = buf.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') continue;
+            try {
+              const j = JSON.parse(payload);
+              if (j.usage) usage = j.usage;
+              const delta = j.choices?.[0]?.delta?.content || '';
+              if (delta) {
+                content += delta;
+                onDelta(delta, content);
+              }
+            } catch { /* ignore malformed keepalive chunks */ }
+          }
+        }
+      } else {
+        const data = await res.json();
+        content = data?.choices?.[0]?.message?.content;
+        usage = data.usage || {};
+      }
       if (!content) throw new Error('LLM response had no content');
-      const u = data.usage || {};
-      log(`llm ${label}: ok in ${Date.now() - t0}ms (attempt ${attempt + 1}) tokens: prompt=${u.prompt_tokens ?? '?'} completion=${u.completion_tokens ?? '?'} total=${u.total_tokens ?? '?'}`);
+      log(`llm ${label}: ok in ${Date.now() - t0}ms (attempt ${attempt + 1}) tokens: prompt=${usage.prompt_tokens ?? '?'} completion=${usage.completion_tokens ?? '?'} total=${usage.total_tokens ?? '?'}`);
       return content;
     } catch (err) {
       lastErr = err;
@@ -62,7 +94,60 @@ export function extractJson(text) {
   return JSON.parse(candidate.slice(start, end + 1));
 }
 
+// Incrementally counts completed card objects inside the `"cards": [ ... ]` array
+// of a partially streamed JSON document. Feed it the growing text; it returns the
+// count of fully closed card objects so far. All parser state persists across
+// feeds so arbitrary chunk boundaries are safe. Final parse is authoritative —
+// this is only for live progress display.
+export function createCardCounter() {
+  let consumed = 0;
+  let inCards = false;
+  let cardsKeySeen = false;
+  let inString = false;
+  let escape = false;
+  let stringContent = '';
+  let depth = 0;
+  let count = 0;
+
+  return function feed(text) {
+    for (let i = consumed; i < text.length; i++) {
+      const ch = text[i];
+      if (inString) {
+        if (escape) { stringContent += ch; escape = false; }
+        else if (ch === '\\') escape = true;
+        else if (ch === '"') {
+          inString = false;
+          if (!inCards && stringContent === 'cards') cardsKeySeen = true;
+        } else stringContent += ch;
+        continue;
+      }
+      if (inCards) {
+        if (ch === '"') inString = true;
+        else if (ch === '[') depth++;
+        else if (ch === '{') depth++;
+        else if (ch === ']') depth--;
+        else if (ch === '}') {
+          depth--;
+          if (depth === 1) count++;
+        }
+        continue;
+      }
+      if (ch === '"') {
+        inString = true;
+        stringContent = '';
+      } else if (cardsKeySeen && ch === '[') {
+        inCards = true;
+        cardsKeySeen = false;
+        depth = 1;
+      }
+    }
+    consumed = text.length;
+    return count;
+  };
+}
+
 // Ask the LLM for a JSON object; retry with a correction nudge if unparseable.
+// opts.onCards(count) receives live progress of completed cards while streaming.
 export async function chatJson(systemPrompt, userContent, opts = {}) {
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -70,7 +155,19 @@ export async function chatJson(systemPrompt, userContent, opts = {}) {
   ];
   let lastErr;
   for (let attempt = 0; attempt < 2; attempt++) {
-    const raw = await chat(messages, opts);
+    let onDelta;
+    if (opts.onCards) {
+      const counter = createCardCounter();
+      let lastCount = 0;
+      onDelta = (_delta, full) => {
+        const n = counter(full);
+        if (n > lastCount) {
+          lastCount = n;
+          opts.onCards(n);
+        }
+      };
+    }
+    const raw = await chat(messages, { ...opts, onDelta });
     try {
       return extractJson(raw);
     } catch (err) {

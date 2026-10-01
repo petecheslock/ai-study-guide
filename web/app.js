@@ -61,6 +61,47 @@ async function api(path, body, method) {
   return data;
 }
 
+// POST that consumes an SSE stream; onProgress fires for each progress event.
+async function apiStream(path, body, onProgress) {
+  const res = await fetch(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Request failed (${res.status})`);
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  let result = null;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) !== -1) {
+      const rawEvent = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      let event = 'message';
+      let data = '';
+      for (const line of rawEvent.split('\n')) {
+        if (line.startsWith('event:')) event = line.slice(6).trim();
+        else if (line.startsWith('data:')) data += line.slice(5).trim();
+      }
+      if (!data) continue;
+      let parsed;
+      try { parsed = JSON.parse(data); } catch { continue; }
+      if (event === 'done') result = parsed;
+      else if (event === 'error') throw new Error(parsed.error || 'Stream error');
+      else if (event === 'progress' && onProgress) onProgress(parsed);
+    }
+  }
+  if (!result) throw new Error('Stream ended without a result');
+  return result;
+}
+
 // ---------- upload ----------
 const dropzone = $('#dropzone');
 const fileInput = $('#file-input');
@@ -141,13 +182,22 @@ $('#btn-start').addEventListener('click', async () => {
     const count = cardCountInput.value;
     $('#loading-title').textContent = 'Writing your flashcards…';
     setStep('gen');
-    setLoadingSub(`Asking the model for ${count} cards, then double-checking every answer against your guide…`);
-    const deck = await api('/api/generate', { text: guide, count });
+    setLoadingSub(`Asking the model for ${count} cards from your guide…`);
+    let deck = await apiStream('/api/generate/stream', { text: guide, count }, (p) => {
+      setLoadingSub(`Written ${p.created} of ${p.total} flashcards…`);
+    });
 
     $('#loading-title').textContent = 'Double-checking answers…';
     setStep('verify');
+    setLoadingSub(`Checking ${deck.cards.length} answers against your guide…`);
+    try {
+      deck = await apiStream('/api/verify/stream', { text: guide, deck }, (p) => {
+        setLoadingSub(`Checked ${p.checked} of ${p.total} answers…`);
+      });
+    } catch (err) {
+      console.warn('verification pass failed, using unverified draft:', err.message);
+    }
     setLoadingSub(`Verified ${deck.cards.length} answers against your guide.`);
-    // verification already happened server-side; mark done while deck settles
     setStep('done');
     stopElapsed();
 
@@ -336,9 +386,19 @@ async function saveDeckRemote(deck, guideText) {
   try {
     await api('/api/decks', { topic: deck.topic, cards: deck.cards, guideText: guideText || '' });
     refreshSavedDecks();
+    toast('✓ Deck saved to your library');
   } catch (err) {
     console.warn('could not save deck:', err.message);
+    toast('⚠ Deck could not be saved');
   }
+}
+
+function toast(msg) {
+  const t = $('#toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
 async function refreshSavedDecks() {
