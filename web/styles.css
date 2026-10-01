@@ -444,6 +444,11 @@ kbd {
   gap: 14px;
   margin-top: 24px;
 }
+.modal-actions .btn {
+  padding: 12px 28px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+}
 .btn-danger {
   background: linear-gradient(135deg, var(--coral), var(--coral-deep));
   box-shadow: 0 6px 0 #a93528, 0 12px 26px rgba(255, 107, 94, 0.28);

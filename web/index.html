@@ -141,16 +141,16 @@
 
 <div id="toast" class="toast" role="status"></div>
 
-<!-- ============ DELETE DECK MODAL ============ -->
-<div id="delete-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title">
+<!-- ============ CONFIRM MODAL (shared: delete deck / end session) ============ -->
+<div id="confirm-modal" class="modal-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="confirm-modal-title">
   <div class="modal-card">
-    <div class="modal-emoji">🗑️</div>
-    <h2 id="delete-modal-title">Delete these flashcards?</h2>
-    <p id="delete-modal-text" class="muted"></p>
-    <p class="modal-warn">This can't be undone — you'd have to regenerate the deck with the LLM.</p>
+    <div id="confirm-modal-emoji" class="modal-emoji">🗑️</div>
+    <h2 id="confirm-modal-title"></h2>
+    <p id="confirm-modal-text" class="muted"></p>
+    <p id="confirm-modal-warn" class="modal-warn hidden"></p>
     <div class="modal-actions">
-      <button id="btn-delete-cancel" class="btn btn-ghost">Keep them</button>
-      <button id="btn-delete-confirm" class="btn btn-danger">Yes, delete</button>
+      <button id="btn-confirm-cancel" class="btn btn-ghost">Cancel</button>
+      <button id="btn-confirm-ok" class="btn btn-danger">Confirm</button>
     </div>
   </div>
 </div>

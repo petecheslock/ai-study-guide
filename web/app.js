@@ -310,7 +310,12 @@ document.addEventListener('keydown', (e) => {
   if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); answer(true); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); answer(false); }
-  else if (e.key === 'Escape') { e.preventDefault(); endSession(); }
+  else if (e.key === 'Escape') {
+    if (isConfirmOpen()) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    endSession();
+  }
 });
 
 // ---------- round complete ----------
@@ -379,10 +384,20 @@ $('#btn-end').addEventListener('click', endSession);
 function endSession() {
   if (state.answering) return;
   const progress = state.index > 0
-    ? `You're on card ${state.index + 1} of ${state.cards.length}.`
+    ? `You're on card ${state.index + 1} of ${state.cards.length}. `
     : '';
-  if (!confirm(`End this session? ${progress} Your saved deck will still be on the main screen.`)) return;
-  backToUpload();
+  openConfirm({
+    emoji: '👋',
+    title: 'End this session?',
+    text: `${progress}Your saved deck will still be on the main screen.`,
+    confirmLabel: 'End session',
+    cancelLabel: 'Keep studying',
+    danger: false,
+    onConfirm: () => {
+      closeConfirm();
+      backToUpload();
+    },
+  });
 }
 
 function backToUpload() {
@@ -472,47 +487,75 @@ async function loadSavedDeck(id) {
   }
 }
 
-// ---------- delete-deck modal ----------
-let pendingDeleteId = null;
+// ---------- confirm modal (shared by delete-deck + end-session) ----------
+let confirmCallback = null;
 
-function openDeleteModal(id, topic, cardCount) {
-  pendingDeleteId = id;
-  $('#delete-modal-text').textContent =
-    `"${topic}" (${cardCount} cards) will be permanently removed from your saved decks.`;
-  $('#delete-modal').classList.remove('hidden');
-  $('#btn-delete-confirm').focus({ preventScroll: true });
+function isConfirmOpen() {
+  return !$('#confirm-modal').classList.contains('hidden');
 }
 
-function closeDeleteModal() {
-  pendingDeleteId = null;
-  $('#delete-modal').classList.add('hidden');
+function openConfirm({ emoji, title, text, warn, confirmLabel, cancelLabel, danger = true, onConfirm }) {
+  const emojiEl = $('#confirm-modal-emoji');
+  emojiEl.textContent = emoji || '';
+  emojiEl.classList.toggle('hidden', !emoji);
+  $('#confirm-modal-title').textContent = title || '';
+  $('#confirm-modal-text').textContent = text || '';
+  const warnEl = $('#confirm-modal-warn');
+  warnEl.textContent = warn || '';
+  warnEl.classList.toggle('hidden', !warn);
+  const okBtn = $('#btn-confirm-ok');
+  okBtn.textContent = confirmLabel || 'Confirm';
+  okBtn.className = 'btn ' + (danger ? 'btn-danger' : 'btn-primary');
+  $('#btn-confirm-cancel').textContent = cancelLabel || 'Cancel';
+  confirmCallback = onConfirm || null;
+  $('#confirm-modal').classList.remove('hidden');
+  okBtn.focus({ preventScroll: true });
 }
 
-$('#btn-delete-cancel').addEventListener('click', closeDeleteModal);
-$('#delete-modal').addEventListener('click', (e) => {
-  if (e.target === e.currentTarget) closeDeleteModal();
+function closeConfirm() {
+  confirmCallback = null;
+  $('#confirm-modal').classList.add('hidden');
+}
+
+$('#btn-confirm-cancel').addEventListener('click', closeConfirm);
+$('#confirm-modal').addEventListener('click', (e) => {
+  if (e.target === e.currentTarget) closeConfirm();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('#delete-modal').classList.contains('hidden')) {
+  if (e.key === 'Escape' && isConfirmOpen()) {
     e.preventDefault();
-    closeDeleteModal();
+    closeConfirm();
   }
+});
+$('#btn-confirm-ok').addEventListener('click', () => {
+  const cb = confirmCallback;
+  if (!cb) { closeConfirm(); return; }
+  cb($('#btn-confirm-ok'));
 });
 
-$('#btn-delete-confirm').addEventListener('click', async () => {
-  if (!pendingDeleteId) return;
-  const btn = $('#btn-delete-confirm');
-  btn.disabled = true;
-  try {
-    await api(`/api/decks/${pendingDeleteId}`, undefined, 'DELETE');
-    closeDeleteModal();
-    refreshSavedDecks();
-  } catch (err) {
-    $('#delete-modal-text').textContent = `Delete failed: ${err.message}`;
-  } finally {
-    btn.disabled = false;
-  }
-});
+function openDeleteModal(id, topic, cardCount) {
+  openConfirm({
+    emoji: '🗑️',
+    title: 'Delete these flashcards?',
+    text: `"${topic}" (${cardCount} cards) will be permanently removed from your saved decks.`,
+    warn: "This can't be undone — you'd have to regenerate the deck with the LLM.",
+    confirmLabel: 'Yes, delete',
+    cancelLabel: 'Keep them',
+    danger: true,
+    onConfirm: async (btn) => {
+      btn.disabled = true;
+      try {
+        await api(`/api/decks/${id}`, undefined, 'DELETE');
+        closeConfirm();
+        refreshSavedDecks();
+      } catch (err) {
+        $('#confirm-modal-text').textContent = `Delete failed: ${err.message}`;
+      } finally {
+        btn.disabled = false;
+      }
+    },
+  });
+}
 
 // ---------- boot ----------
 restoreCardCount();
