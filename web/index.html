@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Flashcard Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div class="glow glow-a"></div>
+<div class="glow glow-b"></div>
+
+<header class="topbar">
+  <div class="logo"><span class="logo-mark">▣</span> Flashcard <em>Studio</em></div>
+  <div id="deck-topic" class="deck-topic hidden"></div>
+</header>
+
+<main id="app">
+
+  <!-- ============ UPLOAD SCREEN ============ -->
+  <section id="screen-upload" class="screen active">
+    <h1 class="hero">Turn any study guide<br />into <span class="sparkle">flashcards</span>.</h1>
+    <p class="sub">Paste the text or drop a photo. Your home AI will read it, double-check the answers, and build a deck.</p>
+
+    <div class="upload-grid">
+      <div class="pane">
+        <label class="pane-title" for="guide-text">📝 Paste your study guide</label>
+        <textarea id="guide-text" placeholder="Type or paste the full study guide here…" spellcheck="false"></textarea>
+      </div>
+      <div class="pane">
+        <span class="pane-title">📷 Or drop a photo of it</span>
+        <div id="dropzone" class="dropzone">
+          <div id="drop-prompt" class="drop-prompt">
+            <div class="drop-icon">⤓</div>
+            <p>Drop an image here<br /><span class="muted">or tap to choose a file</span></p>
+          </div>
+          <img id="preview" class="hidden" alt="study guide preview" />
+          <input type="file" id="file-input" accept="image/*" hidden />
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-start" class="btn btn-primary btn-big">Build my flashcards ✦</button>
+    <p id="upload-error" class="error hidden"></p>
+  </section>
+
+  <!-- ============ LOADING SCREEN ============ -->
+  <section id="screen-loading" class="screen">
+    <div class="loader-card">
+      <div class="flip-loader"><div></div><div></div></div>
+      <h2 id="loading-title">Reading your study guide…</h2>
+      <p id="loading-sub" class="muted">This can take a minute with a local model.</p>
+      <ul class="steps" id="loading-steps">
+        <li data-step="read">Reading the guide</li>
+        <li data-step="gen">Writing flashcards</li>
+        <li data-step="verify">Double-checking answers</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ STUDY SCREEN ============ -->
+  <section id="screen-study" class="screen">
+    <div class="progress-wrap">
+      <div class="progress-track"><div id="progress-fill" class="progress-fill"></div></div>
+      <div class="progress-meta">
+        <span id="progress-count">1 / 10</span>
+        <span id="round-label" class="round-badge">Round 1</span>
+      </div>
+    </div>
+
+    <div id="card" class="card" tabindex="0">
+      <div class="card-inner">
+        <div class="card-face card-front">
+          <span class="face-tag">Question</span>
+          <p id="card-question"></p>
+          <span class="flip-hint">tap or press <kbd>space</kbd> to flip</span>
+        </div>
+        <div class="card-face card-back">
+          <span class="face-tag answer-tag">Answer</span>
+          <p id="card-answer"></p>
+          <span class="flip-hint">got it? → &nbsp;·&nbsp; stuck? ←</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="answer-row">
+      <button id="btn-dunno" class="btn btn-round btn-left" title="Didn't know it (←)">
+        <span class="arrow">←</span>
+        <span class="btn-label">Still fuzzy</span>
+      </button>
+      <button id="btn-gotit" class="btn btn-round btn-right" title="Got it (→)">
+        <span class="btn-label">I got it</span>
+        <span class="arrow">→</span>
+      </button>
+    </div>
+    <p class="kbd-hint muted"><kbd>←</kbd> didn't know &nbsp; <kbd>→</kbd> got it &nbsp; <kbd>space</kbd> flip</p>
+  </section>
+
+  <!-- ============ ROUND COMPLETE SCREEN ============ -->
+  <section id="screen-done" class="screen">
+    <div class="done-card">
+      <div id="done-emoji" class="done-emoji">🎉</div>
+      <h2 id="done-title">Round complete!</h2>
+      <p id="done-summary" class="muted"></p>
+      <div id="missed-list-wrap" class="hidden">
+        <h3>Concepts to revisit:</h3>
+        <ul id="missed-list" class="missed-list"></ul>
+      </div>
+      <div class="done-actions">
+        <button id="btn-followup" class="btn btn-primary btn-big hidden">Make a follow-up deck 🔁</button>
+        <button id="btn-restart" class="btn btn-ghost">Start over with a new guide</button>
+      </div>
+      <p id="followup-error" class="error hidden"></p>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer muted">runs entirely on your home network · <span id="endpoint-label"></span></footer>
+
+<script src="app.js"></script>
+</body>
+</html>

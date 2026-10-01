@@ -1,0 +1,258 @@
+const $ = (sel) => document.querySelector(sel);
+
+const state = {
+  guideText: '',        // original study guide text (ground truth for follow-ups)
+  cards: [],           // current round's cards
+  index: 0,
+  missed: [],          // cards marked "don't know" this round
+  round: 1,
+  flipped: false,
+  answering: false,
+};
+
+// ---------- screen helpers ----------
+function show(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  $(id).classList.add('active');
+}
+
+function setStep(name) {
+  const order = ['read', 'gen', 'verify'];
+  const i = order.indexOf(name);
+  document.querySelectorAll('#loading-steps li').forEach((li, idx) => {
+    li.classList.remove('doing', 'done');
+    if (idx < i) li.classList.add('done');
+    else if (idx === i) li.classList.add('doing');
+  });
+}
+
+function showError(sel, msg) {
+  const el = $(sel);
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? 'GET' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  return data;
+}
+
+// ---------- upload ----------
+const dropzone = $('#dropzone');
+const fileInput = $('#file-input');
+let imageBase64 = null;
+
+dropzone.addEventListener('click', () => fileInput.click());
+['dragover', 'dragenter'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropzone.classList.add('dragover');
+}));
+['dragleave', 'drop'].forEach(ev => dropzone.addEventListener(ev, e => {
+  e.preventDefault();
+  dropzone.classList.remove('dragover');
+}));
+dropzone.addEventListener('drop', e => {
+  const file = e.dataTransfer.files?.[0];
+  if (file && file.type.startsWith('image/')) loadFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files?.[0]) loadFile(fileInput.files[0]);
+});
+
+function loadFile(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    imageBase64 = reader.result; // data:image/...;base64,...
+    const preview = $('#preview');
+    preview.src = imageBase64;
+    preview.classList.remove('hidden');
+    $('#drop-prompt').classList.add('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+$('#btn-start').addEventListener('click', async () => {
+  $('#upload-error').classList.add('hidden');
+  const text = $('#guide-text').value.trim();
+  if (!text && !imageBase64) {
+    showError('#upload-error', 'Paste some text or add a photo of the study guide first.');
+    return;
+  }
+
+  show('#screen-loading');
+  $('#loading-title').textContent = 'Reading your study guide…';
+  $('#loading-steps').classList.remove('hidden');
+  setStep('read');
+
+  try {
+    let guide = text;
+    if (!guide && imageBase64) {
+      const t = await api('/api/transcribe', { image: imageBase64 });
+      guide = t.text;
+      if (!guide || guide.length < 20) throw new Error('Could not read any text from that photo — try a clearer picture.');
+    }
+    state.guideText = guide;
+
+    $('#loading-title').textContent = 'Writing your flashcards…';
+    setStep('gen');
+    const deck = await api('/api/generate', { text: guide });
+
+    $('#loading-title').textContent = 'Double-checking answers…';
+    setStep('verify');
+    // verification already happened server-side; mark done while deck settles
+    setStep('done');
+
+    startRound(deck.cards, state.round);
+  } catch (err) {
+    show('#screen-upload');
+    showError('#upload-error', err.message);
+  }
+});
+
+// ---------- study ----------
+function startRound(cards, round) {
+  state.cards = cards;
+  state.index = 0;
+  state.missed = [];
+  state.round = round;
+  $('#deck-topic').textContent = `Round ${round} · ${cards.length} cards`;
+  $('#deck-topic').classList.remove('hidden');
+  $('#round-label').textContent = round === 1 ? 'Round 1' : `Follow-up round ${round - 1}`;
+  show('#screen-study');
+  renderCard();
+}
+
+function renderCard() {
+  const card = $('#card');
+  card.classList.remove('flipped', 'shake-left', 'pop-right');
+  state.flipped = false;
+  const c = state.cards[state.index];
+  $('#card-question').textContent = c.question;
+  $('#card-answer').textContent = c.answer;
+  updateProgress();
+  card.focus({ preventScroll: true });
+}
+
+function updateProgress() {
+  const total = state.cards.length;
+  const done = state.index;
+  $('#progress-fill').style.width = `${(done / total) * 100}%`;
+  $('#progress-count').textContent = `${done + 1} / ${total}`;
+}
+
+function flip() {
+  if (state.answering) return;
+  state.flipped = !state.flipped;
+  $('#card').classList.toggle('flipped', state.flipped);
+}
+
+function answer(knew) {
+  if (state.answering) return;
+  if (!state.flipped) { flip(); return; }
+  state.answering = true;
+
+  const card = $('#card');
+  card.classList.add(knew ? 'pop-right' : 'shake-left');
+  if (!knew) state.missed.push(state.cards[state.index]);
+
+  setTimeout(() => {
+    state.answering = false;
+    state.index++;
+    if (state.index >= state.cards.length) {
+      finishRound();
+    } else {
+      renderCard();
+    }
+  }, 320);
+}
+
+$('#card').addEventListener('click', flip);
+$('#btn-gotit').addEventListener('click', () => answer(true));
+$('#btn-dunno').addEventListener('click', () => answer(false));
+
+document.addEventListener('keydown', (e) => {
+  if (!$('#screen-study').classList.contains('active')) return;
+  if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); flip(); }
+  else if (e.key === 'ArrowRight') { e.preventDefault(); answer(true); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); answer(false); }
+});
+
+// ---------- round complete ----------
+function finishRound() {
+  $('#progress-fill').style.width = '100%';
+  const total = state.cards.length;
+  const got = total - state.missed.length;
+  const perfect = state.missed.length === 0;
+
+  $('#done-emoji').textContent = perfect ? '🏆' : got >= total / 2 ? '🎉' : '💪';
+  $('#done-title').textContent = perfect ? 'Perfect round!' : 'Round complete!';
+  $('#done-summary').textContent = `You knew ${got} out of ${total} cards.`;
+
+  const missedWrap = $('#missed-list-wrap');
+  const followBtn = $('#btn-followup');
+  $('#followup-error').classList.add('hidden');
+
+  if (perfect) {
+    missedWrap.classList.add('hidden');
+    followBtn.classList.add('hidden');
+  } else {
+    missedWrap.classList.remove('hidden');
+    followBtn.classList.remove('hidden');
+    const ul = $('#missed-list');
+    ul.innerHTML = '';
+    state.missed.forEach(c => {
+      const li = document.createElement('li');
+      li.textContent = c.question;
+      ul.appendChild(li);
+    });
+  }
+  show('#screen-done');
+}
+
+$('#btn-followup').addEventListener('click', async () => {
+  const btn = $('#btn-followup');
+  btn.disabled = true;
+  $('#followup-error').classList.add('hidden');
+
+  show('#screen-loading');
+  $('#loading-title').textContent = 'Making a follow-up deck…';
+  $('#loading-steps').classList.add('hidden');
+
+  try {
+    const deck = await api('/api/followup', {
+      text: state.guideText,
+      missed: state.missed.map(c => ({ question: c.question, answer: c.answer })),
+    });
+    startRound(deck.cards, state.round + 1);
+  } catch (err) {
+    show('#screen-done');
+    showError('#followup-error', err.message);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+$('#btn-restart').addEventListener('click', () => {
+  state.guideText = '';
+  state.cards = [];
+  state.round = 1;
+  imageBase64 = null;
+  $('#guide-text').value = '';
+  $('#preview').classList.add('hidden');
+  $('#drop-prompt').classList.remove('hidden');
+  $('#deck-topic').classList.add('hidden');
+  show('#screen-upload');
+});
+
+// ---------- boot ----------
+api('/api/health').then(h => {
+  $('#endpoint-label').textContent = h.endpoint.baseUrl;
+}).catch(() => {
+  $('#endpoint-label').textContent = 'LLM endpoint unknown';
+});
