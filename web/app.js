@@ -67,8 +67,19 @@ const fileInput = $('#file-input');
 const cardCountInput = $('#card-count');
 let imageBase64 = null;
 
+const CARD_COUNT_KEY = 'flashcard-studio.cardCount';
+
+function restoreCardCount() {
+  const saved = parseInt(localStorage.getItem(CARD_COUNT_KEY), 10);
+  if (Number.isFinite(saved)) {
+    cardCountInput.value = Math.min(50, Math.max(5, saved));
+  }
+  $('#card-count-value').textContent = cardCountInput.value;
+}
+
 cardCountInput.addEventListener('input', () => {
   $('#card-count-value').textContent = cardCountInput.value;
+  localStorage.setItem(CARD_COUNT_KEY, cardCountInput.value);
 });
 
 dropzone.addEventListener('click', () => fileInput.click());
@@ -427,6 +438,7 @@ $('#btn-delete-confirm').addEventListener('click', async () => {
 });
 
 // ---------- boot ----------
+restoreCardCount();
 refreshSavedDecks();
 api('/api/health').then(h => {
   $('#endpoint-label').textContent = h.endpoint.baseUrl;
